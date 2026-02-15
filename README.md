@@ -1,16 +1,64 @@
-# React + Vite
+# Partial PR Merger
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A precision tool for cherry-picking specific lines from a GitHub Pull Request and merging them into your target branch without the need to clone the repository locally.
 
-Currently, two official plugins are available:
+![Project Merge Landing](https://media.discordapp.net/attachments/placeholder.png)
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## 🚀 Key Features
 
-## React Compiler
+*   **Surgical Selection**: Choose exactly which lines to merge from a PR.
+    *   **Keep (Repo Version)**: Retain the original code (Red lines).
+    *   **Add (PR Version)**: Apply the new changes (Green lines).
+    *   **Smart Mutual Exclusion**: Selecting a block of changes automatically handles conflicts, ensuring you don't merge duplicate logic.
+*   **No-Clone Workflow**: Operates entirely via the GitHub API. No `git clone`, no local storage overhead.
+*   **Premium Design**:
+    *   **Typography**: distinct 'DM Serif Display' headings and 'Outfit' body text.
+    *   **Visuals**: Clean, dark-mode interface with syntax highlighting for diffs.
+*   **Sidebar Navigation**:
+    *   Click file names to smooth-scroll to changes.
+    *   **Bulk Actions**: Toggle entire files between "PR Version" and "Repo Version" with a single click.
+    *   **Status Indicators**: identifying partial or mixed selections at a glance.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## 🛠️ Tech Stack
 
-## Expanding the ESLint configuration
+*   **Frontend**: React + Vite
+*   **Styling**: Tailwind CSS (Custom Design System)
+*   **Icons**: Lucide React
+*   **API**: Octokit (GitHub REST API)
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## 📖 Usage Guide
+
+1.  **Authentication**:
+    *   Enter your **GitHub Personal Access Token (PAT)** when prompted.
+    *   Required Scope: `repo` (to read code and push commits).
+    *   *Tip: Use the built-in Help ('?') link to generate one with the correct permissions.*
+
+2.  **Analyze a Pull Request**:
+    *   Paste the full URL of a GitHub PR (e.g., `https://github.com/owner/repo/pull/123`).
+    *   Click **"Analyze"**.
+
+3.  **Select Your Changes**:
+    *   The **Left Sidebar** shows all changed files. use the checkbox to bulk-select the PR version or the Repo version.
+    *   The **Main Diff View** allows line-by-line control.
+    *   **Green Checkbox**: Select to **ADD** the change from the PR.
+    *   **Red Checkbox**: Select to **KEEP** the original version (reject the change).
+
+4.  **Merge**:
+    *   Click **"Merge Selected Lines"**.
+    *   The app will construct a new commit on the target branch with *only* your selected changes and push it to GitHub.
+
+## 📦 Installation (Local Dev)
+
+1.  Clone this repository.
+2.  Install dependencies:
+    ```bash
+    npm install
+    ```
+3.  Start the dev server:
+    ```bash
+    npm run dev
+    ```
+4.  Open `http://localhost:5173` to start merging!
+
+---
+*Built for precision and speed.*
