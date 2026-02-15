@@ -55,8 +55,28 @@ const Landing = () => {
     }
   };
 
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+
+  React.useEffect(() => {
+    const handleMouseMove = (e) => {
+      setMousePos({ x: e.clientX, y: e.clientY });
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    return () => window.removeEventListener('mousemove', handleMouseMove);
+  }, []);
+
   return (
     <div className="min-h-screen bg-background flex flex-col relative overflow-hidden font-sans text-white selection:bg-primary/30">
+
+      {/* Cursor Glow */}
+      <div
+        className="fixed w-[100px] h-[100px] bg-gradient-to-r from-blue-600/50 to-cyan-400/50 rounded-full blur-[40px] pointer-events-none -translate-x-1/2 -translate-y-1/2 transition-transform duration-75 ease-out will-change-transform z-0"
+        style={{
+          left: mousePos.x,
+          top: mousePos.y,
+        }}
+      />
 
       {/* Background Glows */}
       <div className="absolute top-[-20%] left-[20%] w-[600px] h-[600px] bg-primary/20 rounded-full blur-[120px] pointer-events-none" />
