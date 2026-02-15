@@ -71,10 +71,7 @@ const Landing = () => {
           <span className="font-bold text-xl tracking-tight">PartialMerger</span>
         </div>
         <div className="flex items-center gap-6">
-          <a href="#" className="text-zinc-400 hover:text-white transition-colors text-sm font-medium">Log in</a>
-          <button className="bg-white text-black px-5 py-2 rounded-full text-sm font-semibold hover:bg-gray-200 transition-colors">
-            Sign up
-          </button>
+          {/* Auth buttons removed */}
         </div>
       </header>
 
