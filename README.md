@@ -2,7 +2,7 @@
 
 A precision tool for cherry-picking specific lines from a GitHub Pull Request and merging them into your target branch without the need to clone the repository locally.
 
-![Project Merge Landing](https://media.discordapp.net/attachments/placeholder.png)
+![Partial PR Merger Hero](public/assets/hero-card-readme.png)
 
 ## 🚀 Key Features
 
