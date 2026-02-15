@@ -2,13 +2,15 @@ import React, { useState } from 'react';
 import { Routes, Route, useNavigate } from 'react-router-dom';
 import Dashboard from './pages/Dashboard';
 import PATModal from './components/ui/PATModal';
-import { Github, ArrowRight, ShieldCheck, Zap, GitCommit } from 'lucide-react';
+import HelpModal from './components/ui/HelpModal';
+import { Github, ArrowRight, ShieldCheck, Zap, GitCommit, HelpCircle } from 'lucide-react';
 import { checkAuth } from './services/github';
 
 const Landing = () => {
   const navigate = useNavigate();
   const [url, setUrl] = useState('');
   const [showModal, setShowModal] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -83,7 +85,7 @@ const Landing = () => {
       <div className="absolute bottom-[-10%] right-[-10%] w-[500px] h-[500px] bg-primary/10 rounded-full blur-[100px] pointer-events-none" />
 
       {/* Header */}
-      <header className="absolute top-0 w-full px-8 py-6 flex justify-between items-center z-10">
+      <header className="absolute top-0 w-full px-8 py-6 flex justify-between items-center z-50">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 bg-gradient-to-br from-primary to-blue-600 rounded-lg flex items-center justify-center shadow-glow">
             <GitCommit className="text-white" size={20} />
@@ -91,7 +93,13 @@ const Landing = () => {
           <span className="font-bold text-xl tracking-tight">PartialMerger</span>
         </div>
         <div className="flex items-center gap-6">
-          {/* Auth buttons removed */}
+          <button
+            onClick={() => setShowHelp(true)}
+            className="flex items-center gap-2 text-zinc-400 hover:text-white transition-colors text-sm font-medium"
+          >
+            <HelpCircle size={18} />
+            How to use
+          </button>
         </div>
       </header>
 
@@ -140,6 +148,11 @@ const Landing = () => {
         isOpen={showModal}
         onClose={() => setShowModal(false)}
         onSave={handleSaveToken}
+      />
+
+      <HelpModal
+        isOpen={showHelp}
+        onClose={() => setShowHelp(false)}
       />
     </div>
   );
