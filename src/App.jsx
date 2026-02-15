@@ -82,7 +82,7 @@ const Landing = () => {
       <main className="flex-1 flex flex-col items-center justify-center px-4 relative z-10 text-center pb-32">
 
 
-        <h1 className="text-6xl md:text-7xl font-extrabold tracking-tight mb-6 flex flex-col items-center gap-6">
+        <h1 className="text-6xl md:text-7xl font-extrabold tracking-tight mb-6 flex flex-col items-center gap-1">
           <span className="font-display leading-none">Ship only</span>
           <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-blue-600 leading-tight pb-2">
             what's ready.
@@ -100,13 +100,10 @@ const Landing = () => {
               type="text"
               value={url}
               onChange={(e) => { setUrl(e.target.value); setError(''); }}
-              placeholder="Paste GitHub PR Link..."
+              placeholder="Paste GitHub PR Link"
               className="flex-1 bg-transparent border-none outline-none text-white placeholder-zinc-500 text-lg"
               onKeyDown={(e) => e.key === 'Enter' && handleAnalyze()}
             />
-            <div className="hidden md:flex items-center gap-2 mr-4">
-              <kbd className="hidden sm:inline-block px-2 py-1 text-xs font-semibold text-zinc-500 bg-zinc-800 border border-zinc-700 rounded-md">⌘ V</kbd>
-            </div>
             <button
               onClick={handleAnalyze}
               disabled={loading}
