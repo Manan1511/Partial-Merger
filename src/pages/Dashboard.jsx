@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import clsx from 'clsx';
 import { parseDiff } from '../utils/diffParser';
 import { getPRDetails, mergeLines, getFileContent } from '../services/github';
 import DiffViewer from '../components/DiffViewer';
@@ -17,6 +18,20 @@ const Dashboard = () => {
     const [toast, setToast] = useState(null);
 
     const { url, token } = location.state || {};
+
+    // --- NEW: Global Selection Mode State ---
+    const [fileModes, setFileModes] = useState({}); // { fileName: 'block' | 'single' }
+    const [globalMode, setGlobalMode] = useState('block'); // 'block' | 'single'
+
+    // Initialize or Reset modes when diffData changes
+    useEffect(() => {
+        if (diffData.length > 0) {
+            const initialModes = {};
+            diffData.forEach(file => initialModes[file.fileName] = 'block');
+            setFileModes(initialModes);
+            setGlobalMode('block');
+        }
+    }, [diffData]);
 
     useEffect(() => {
         if (!url || !token) {
@@ -62,15 +77,22 @@ const Dashboard = () => {
         fetchDiff();
     }, [url, token, navigate]);
 
-    const toggleLine = (id) => {
+    const toggleBlock = (ids) => {
+        if (!ids || ids.length === 0) return;
         const newSet = new Set(selectedLines);
 
-        // Find the line object to check its type and context
+        // Determine target state (if any unrelated line is unselected, we select all. If all selected, we deselect all)
+        const allSelected = ids.every(id => newSet.has(id));
+        const shouldSelect = !allSelected;
+
+        // Context for mutual exclusion (use first line)
+        // Find file and line
         let targetLine = null;
         let targetFile = null;
+        const firstId = ids[0];
 
         for (const file of diffData) {
-            const found = file.lines.find(l => l.id === id);
+            const found = file.lines.find(l => l.id === firstId);
             if (found) {
                 targetLine = found;
                 targetFile = file;
@@ -78,36 +100,62 @@ const Dashboard = () => {
             }
         }
 
-        if (!targetLine) return;
-
-        if (newSet.has(id)) {
-            newSet.delete(id);
-        } else {
-            newSet.add(id);
-
-            // Mutual Exclusion: Hunk Detection
-            // Scan outwards to find the extent of this change block (Hunk)
-            // Stop at 'chunk' headers or end of file.
-
+        if (shouldSelect && targetLine) {
+            // Apply Mutual Exclusion (deselect opposite types in the same hunk)
             const lines = targetFile.lines;
-            const index = lines.findIndex(l => l.id === id);
-            const targetType = targetLine.type; // 'addition' or 'deletion'
+            const index = lines.findIndex(l => l.id === firstId);
+            const targetType = targetLine.type;
             const oppositeType = targetType === 'addition' ? 'deletion' : 'addition';
 
-            // Go backwards
+            // Scan backwards
             for (let i = index - 1; i >= 0; i--) {
                 const l = lines[i];
-                if (l.type === 'chunk') break; // Hunk boundary
+                if (l.type === 'chunk') break;
                 if (l.type === oppositeType) newSet.delete(l.id);
             }
-
-            // Go forwards
-            for (let i = index + 1; i < lines.length; i++) {
+            // Scan forwards (include current block and beyond)
+            for (let i = index; i < lines.length; i++) {
                 const l = lines[i];
-                if (l.type === 'chunk') break; // Hunk boundary
+                if (l.type === 'chunk') break;
                 if (l.type === oppositeType) newSet.delete(l.id);
             }
         }
+
+        // Apply toggle
+        ids.forEach(id => {
+            if (shouldSelect) newSet.add(id);
+            else newSet.delete(id);
+        });
+
+        setSelectedLines(newSet);
+    };
+
+    const toggleFileMode = (fileName) => {
+        setFileModes(prev => ({
+            ...prev,
+            [fileName]: prev[fileName] === 'single' ? 'block' : 'single'
+        }));
+    };
+
+    const toggleGlobalMode = () => {
+        const newMode = globalMode === 'block' ? 'single' : 'block';
+        setGlobalMode(newMode);
+
+        // Update all files to new mode
+        const newModes = {};
+        diffData.forEach(file => newModes[file.fileName] = newMode);
+        setFileModes(newModes);
+    };
+
+    const toggleLine = (id) => {
+        const newSet = new Set(selectedLines);
+        // Simple toggle for single line mode (allows granular control)
+        // We could add simple mutual exclusion here (find line, check opposite at same position),
+        // but for "manual/single" mode, simple toggle is usually expected.
+        // However, to prevent "double inclusion" (keeping old AND adding new), we might want minimum conflict resoltion.
+        // Let's stick to true manual toggle for now.
+        if (newSet.has(id)) newSet.delete(id);
+        else newSet.add(id);
         setSelectedLines(newSet);
     };
 
@@ -161,6 +209,15 @@ const Dashboard = () => {
                             // LOGIC CHANGE:
                             if (selectedLines.has(line.id)) {
                                 // Selected = KEEP ORIGINAL
+                                // Wait, simple toggleLine doesn't enforce "keep original means don't include new".
+                                // The merge logic just processes sequentially.
+                                // If I have:
+                                // - Old (Selected)
+                                // + New (Selected)
+                                // Result: "Old" is processed here (pushed).
+                                // Then "New" is processed next (pushed).
+                                // Result: Both lines. Valid.
+
                                 if (cursor < originalLines.length) newContentLines.push(originalLines[cursor]);
                                 cursor++;
                             } else {
@@ -352,21 +409,55 @@ const Dashboard = () => {
 
                 {/* Diff View */}
                 <div className="flex-1 flex flex-col overflow-hidden">
-                    <div className="flex items-center gap-6 px-6 py-3 border-b border-border/50 text-xs text-zinc-500 bg-surface/50">
-                        <div className="flex items-center gap-2">
-                            <span className="w-4 h-4 rounded border border-red-500/30 bg-red-500/10 flex items-center justify-center text-red-400">
-                                <Check size={10} />
-                            </span>
-                            <span>Select to Keep (Repo Version)</span>
+                    <div className="flex items-center justify-between px-6 py-3 border-b border-border/50 text-xs text-zinc-500 bg-surface/50">
+                        <div className="flex items-center gap-6">
+                            <div className="flex items-center gap-2">
+                                <span className="w-4 h-4 rounded border border-red-500/30 bg-red-500/10 flex items-center justify-center text-red-400">
+                                    <Check size={10} />
+                                </span>
+                                <span>Select to Keep (Repo Version)</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <span className="w-4 h-4 rounded border border-green-500/30 bg-green-500/10 flex items-center justify-center text-green-400">
+                                    <Check size={10} />
+                                </span>
+                                <span>Select to Add (PR Version)</span>
+                            </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                            <span className="w-4 h-4 rounded border border-green-500/30 bg-green-500/10 flex items-center justify-center text-green-400">
-                                <Check size={10} />
-                            </span>
-                            <span>Select to Add (PR Version)</span>
+
+                        {/* --- NEW: Master Toggle --- */}
+                        <div className="flex items-center gap-2 border-l border-zinc-700 pl-6">
+                            <span className="font-semibold text-zinc-400 uppercase tracking-wider">Selection Mode:</span>
+                            <div className="flex items-center bg-zinc-800 rounded p-1 border border-zinc-700">
+                                <button
+                                    onClick={toggleGlobalMode}
+                                    className={clsx(
+                                        "px-3 py-1 text-xs rounded transition-colors font-medium",
+                                        globalMode === 'single' ? "bg-zinc-600 text-white shadow-sm" : "text-zinc-500 hover:text-zinc-300"
+                                    )}
+                                >
+                                    Single
+                                </button>
+                                <button
+                                    onClick={toggleGlobalMode}
+                                    className={clsx(
+                                        "px-3 py-1 text-xs rounded transition-colors font-medium",
+                                        globalMode === 'block' ? "bg-zinc-600 text-white shadow-sm" : "text-zinc-500 hover:text-zinc-300"
+                                    )}
+                                >
+                                    Block
+                                </button>
+                            </div>
                         </div>
                     </div>
-                    <DiffViewer diffFiles={diffData} selectedLines={selectedLines} toggleLine={toggleLine} />
+                    <DiffViewer
+                        diffFiles={diffData}
+                        selectedLines={selectedLines}
+                        toggleBlock={toggleBlock}
+                        toggleLine={toggleLine}
+                        fileModes={fileModes}
+                        onToggleFileMode={toggleFileMode}
+                    />
                 </div>
             </main>
 
