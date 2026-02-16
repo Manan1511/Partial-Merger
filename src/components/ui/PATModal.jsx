@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
-import { X, ExternalLink } from 'lucide-react';
+import { X, ExternalLink, Check } from 'lucide-react';
+import clsx from 'clsx';
 
 const PATModal = ({ isOpen, onClose, onSave }) => {
     const [token, setToken] = useState('');
+    const [saveLocally, setSaveLocally] = useState(false); // Default false for security
 
     if (!isOpen) return null;
 
@@ -27,7 +29,6 @@ const PATModal = ({ isOpen, onClose, onSave }) => {
                 </div>
                 <p className="text-zinc-400 text-sm mb-6">
                     A Personal Access Token (PAT) is required to fetch diffs and merge lines.
-                    It is stored locally in your browser.
                 </p>
 
                 <div className="space-y-4">
@@ -41,8 +42,24 @@ const PATModal = ({ isOpen, onClose, onSave }) => {
                             className="w-full bg-background border border-border rounded-lg px-4 py-2 focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all font-mono text-sm"
                         />
                     </div>
+
+                    <div
+                        className="flex items-center gap-2 cursor-pointer group"
+                        onClick={() => setSaveLocally(!saveLocally)}
+                    >
+                        <div className={clsx(
+                            "w-4 h-4 rounded border flex items-center justify-center transition-all",
+                            saveLocally ? "bg-primary border-primary" : "border-zinc-600 bg-zinc-800 group-hover:border-zinc-500"
+                        )}>
+                            {saveLocally && <Check size={10} className="text-white" />}
+                        </div>
+                        <label className="text-sm text-zinc-300 select-none cursor-pointer group-hover:text-white transition-colors">
+                            Store token locally (Remember me)
+                        </label>
+                    </div>
+
                     <button
-                        onClick={() => onSave(token)}
+                        onClick={() => onSave(token, saveLocally)}
                         disabled={!token}
                         className="w-full bg-primary hover:bg-primary/90 text-white font-medium py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >

@@ -14,7 +14,7 @@ const Landing = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleAnalyze = async () => {
+  const handleAnalyze = async (tokenOverride = null) => {
     if (!url) return;
 
     // Basic validation
@@ -23,8 +23,9 @@ const Landing = () => {
       return;
     }
 
-    const savedToken = localStorage.getItem('partial_merger_pat');
-    if (!savedToken) {
+    const tokenToUse = tokenOverride || localStorage.getItem('partial_merger_pat');
+
+    if (!tokenToUse) {
       setShowModal(true);
       return;
     }
@@ -32,24 +33,28 @@ const Landing = () => {
     setLoading(true);
     try {
       // Validate token quickly
-      await checkAuth(savedToken);
-      navigate('/dashboard', { state: { url, token: savedToken } });
+      await checkAuth(tokenToUse);
+      navigate('/dashboard', { state: { url, token: tokenToUse } });
     } catch (e) {
       // Token invalid or expired
-      localStorage.removeItem('partial_merger_pat');
+      if (!tokenOverride) {
+        localStorage.removeItem('partial_merger_pat');
+      }
       setShowModal(true);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSaveToken = async (token) => {
+  const handleSaveToken = async (token, saveLocally) => {
     setLoading(true);
     try {
       await checkAuth(token);
-      localStorage.setItem('partial_merger_pat', token);
+      if (saveLocally) {
+        localStorage.setItem('partial_merger_pat', token);
+      }
       setShowModal(false);
-      handleAnalyze(); // Retry analysis
+      handleAnalyze(token); // Use the new token for this session
     } catch (e) {
       alert("Invalid Token. Please check capabilities.");
     } finally {
