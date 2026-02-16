@@ -32,18 +32,20 @@ A precision tool for cherry-picking specific lines from a GitHub Pull Request an
     *   Enter your **GitHub Personal Access Token (PAT)** when prompted.
     *   Required Scope: `repo` (to read code and push commits).
     *   *Tip: Use the built-in Help ('?') link to generate one with the correct permissions.*
+    *   **Optional Storage**: Check "Remember me" to store your token locally. Uncheck for a one-time session (token cleared on exit).
 
-2.  **Analyze a Pull Request**:
+3.  **Analyze a Pull Request**:
     *   Paste the full URL of a GitHub PR (e.g., `https://github.com/owner/repo/pull/123`).
     *   Click **"Analyze"**.
 
-3.  **Select Your Changes**:
-    *   The **Left Sidebar** shows all changed files. use the checkbox to bulk-select the PR version or the Repo version.
-    *   The **Main Diff View** allows line-by-line control.
+4.  **Select Your Changes**:
+    *   **Master Toggle**: Switch between **"Block"** (select entire chunks) and **"Single"** (select individual lines) modes globally.
+    *   **Per-File Overrides**: You can also toggle the mode for specific files individually.
+    *   The **Left Sidebar** shows all changed files. Click to jump to them.
     *   **Green Checkbox**: Select to **ADD** the change from the PR.
     *   **Red Checkbox**: Select to **KEEP** the original version (reject the change).
 
-4.  **Merge**:
+5.  **Merge**:
     *   Click **"Merge Selected Lines"**.
     *   The app will construct a new commit on the target branch with *only* your selected changes and push it to GitHub.
 
