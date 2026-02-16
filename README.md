@@ -11,9 +11,6 @@ A precision tool for cherry-picking specific lines from a GitHub Pull Request an
     *   **Add (PR Version)**: Apply the new changes (Green lines).
     *   **Smart Mutual Exclusion**: Selecting a block of changes automatically handles conflicts, ensuring you don't merge duplicate logic.
 *   **No-Clone Workflow**: Operates entirely via the GitHub API. No `git clone`, no local storage overhead.
-*   **Premium Design**:
-    *   **Typography**: distinct 'DM Serif Display' headings and 'Outfit' body text.
-    *   **Visuals**: Clean, dark-mode interface with syntax highlighting for diffs.
 *   **Sidebar Navigation**:
     *   Click file names to smooth-scroll to changes.
     *   **Bulk Actions**: Toggle entire files between "PR Version" and "Repo Version" with a single click.
