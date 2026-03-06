@@ -14,6 +14,18 @@ import { ArrowLeft, GitMerge, Loader2, Github, Check, Minus, Sparkles, Settings,
 const Dashboard = () => {
     const location = useLocation();
     const navigate = useNavigate();
+
+    // Security: read token once, then scrub it from history state
+    const tokenRef = useRef(location.state?.token || null);
+    const url = location.state?.url || '';
+    useEffect(() => {
+        if (location.state?.token) {
+            window.history.replaceState({ url: location.state.url }, '');
+        }
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+    const token = tokenRef.current;
+
     const [diffData, setDiffData] = useState([]);
     const [prDetails, setPrDetails] = useState(null);
     const [selectedLines, setSelectedLines] = useState(new Set());
@@ -21,7 +33,6 @@ const Dashboard = () => {
     const [merging, setMerging] = useState(false);
     const [toast, setToast] = useState(null);
 
-    const { url, token } = location.state || {};
 
     // --- Global Selection Mode State ---
     const [fileModes, setFileModes] = useState({}); // { fileName: 'block' | 'single' }
@@ -69,11 +80,11 @@ const Dashboard = () => {
         const fetchDiff = async () => {
             try {
                 // simple parse logic repeated locally or import from service
-                const regex = /github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/;
+                const regex = /^https?:\/\/(www\.)?github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/;
                 const match = url.match(regex);
                 if (!match) throw new Error("Invalid URL");
 
-                const { owner, repo, pull_number } = { owner: match[1], repo: match[2], pull_number: match[3] };
+                const { owner, repo, pull_number } = { owner: match[2], repo: match[3], pull_number: match[4] };
 
                 const { diff, pr } = await getPRDetails(token, { owner, repo, pull_number });
                 setPrDetails(pr);

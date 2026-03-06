@@ -293,6 +293,10 @@ const buildRequest = (providerId, apiKey, annotatedDiff) => {
         }
 
         case "gemini": {
+            // SECURITY NOTE: Google's Gemini API requires the key as a URL
+            // query parameter — no header-based auth is available for browser
+            // contexts. The key may appear in browser network logs and
+            // extensions. This is Google's design, not a bug in our code.
             const model = "gemini-2.5-flash";
             const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
             return {

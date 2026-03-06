@@ -17,8 +17,8 @@ const Landing = () => {
   const handleAnalyze = async (tokenOverride = null) => {
     if (!url) return;
 
-    // Basic validation
-    if (!url.includes('github.com') || !url.includes('/pull/')) {
+    // Basic validation — anchor to github.com hostname
+    if (!/^https?:\/\/(www\.)?github\.com\//.test(url) || !url.includes('/pull/')) {
       setError('Please enter a valid GitHub PR URL');
       return;
     }
