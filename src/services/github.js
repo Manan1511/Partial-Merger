@@ -68,14 +68,15 @@ export const getFileContent = async (token, { owner, repo, path, ref }) => {
 }
 
 /**
- * The "No-Clone" Merge Strategy
+ * The "No-Clone" PR Strategy
  * 1. Get Context (Latest Commit SHA of target branch)
- * 2. Create Blob (File content with cherry-picked lines)
+ * 2. Create Blobs (File content with cherry-picked lines)
  * 3. Create Tree
  * 4. Create Commit
- * 5. Update Reference
+ * 5. Create a new branch from the commit
+ * 6. Open a Pull Request from the new branch into the base branch
  */
-export const mergeLines = async (token, { owner, repo, baseBranch, itemsToMerge, message }) => {
+export const mergeLines = async (token, { owner, repo, baseBranch, itemsToMerge, message, prNumber }) => {
     const octokit = getOctokit(token);
 
     // 1. Get Context (Latest Commit of Base Branch)
@@ -96,9 +97,6 @@ export const mergeLines = async (token, { owner, repo, baseBranch, itemsToMerge,
     const treeItems = [];
 
     for (const item of itemsToMerge) {
-        // item: { path: string, content: string }
-        // We assume 'content' is the FINAL content of the file we want to push
-
         const { data: blobData } = await octokit.rest.git.createBlob({
             owner,
             repo,
@@ -124,22 +122,35 @@ export const mergeLines = async (token, { owner, repo, baseBranch, itemsToMerge,
     const newTreeSha = treeData.sha;
 
     // 4. Create Commit
+    const commitMessage = message || "Cherry-pick specific lines via Partial Merger";
     const { data: newCommitData } = await octokit.rest.git.createCommit({
         owner,
         repo,
-        message: message || "Cherry-pick specific lines via Partial Merger",
+        message: commitMessage,
         tree: newTreeSha,
         parents: [latestCommitSha],
     });
     const newCommitSha = newCommitData.sha;
 
-    // 5. Update Reference
-    await octokit.rest.git.updateRef({
+    // 5. Create a new branch for the PR
+    const timestamp = Date.now();
+    const branchName = `partial-merge/pr-${prNumber || "unknown"}-${timestamp}`;
+    await octokit.rest.git.createRef({
         owner,
         repo,
-        ref: `heads/${baseBranch}`,
+        ref: `refs/heads/${branchName}`,
         sha: newCommitSha,
     });
 
-    return { newCommitSha };
+    // 6. Open a Pull Request
+    const { data: pullRequest } = await octokit.rest.pulls.create({
+        owner,
+        repo,
+        title: commitMessage,
+        head: branchName,
+        base: baseBranch,
+        body: `This PR was created by **Partial Merger** with cherry-picked lines from PR #${prNumber || "?"}.\n\nPlease review the selected changes before merging.`,
+    });
+
+    return { newCommitSha, prUrl: pullRequest.html_url, prNumber: pullRequest.number };
 };

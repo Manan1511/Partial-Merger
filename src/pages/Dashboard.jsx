@@ -514,15 +514,16 @@ const Dashboard = () => {
                 finalInputs.push({ path: file.fileName, content: newContentLines.join('\n') });
             }
 
-            await mergeLines(token, {
+            const result = await mergeLines(token, {
                 owner: prDetails.base.repo.owner.login,
                 repo: prDetails.base.repo.name,
                 baseBranch: prDetails.base.ref,
                 itemsToMerge: finalInputs,
-                message: `Partial merge of ${selectedLines.size} lines from PR #${prDetails.number}`
+                message: `Partial merge of ${selectedLines.size} lines from PR #${prDetails.number}`,
+                prNumber: prDetails.number
             });
 
-            setToast({ message: "Successfully merged selected lines!", type: "success" });
+            setToast({ message: `PR #${result.prNumber} created! `, link: result.prUrl, type: "success" });
             setSelectedLines(new Set()); // Clear selection
         } catch (err) {
             console.error(err);
@@ -607,7 +608,7 @@ const Dashboard = () => {
                         className="bg-primary hover:bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium shadow-glow transition-all disabled:opacity-50 disabled:shadow-none flex items-center gap-2"
                     >
                         {merging ? <Loader2 className="animate-spin" size={16} /> : <GitMerge size={16} />}
-                        {merging ? "Merging..." : `Merge Selected Lines (${selectedLines.size})`}
+                        {merging ? "Creating PR…" : `Create PR (${selectedLines.size} lines)`}
                     </button>
                     <button
                         onClick={() => {
@@ -786,7 +787,7 @@ const Dashboard = () => {
                 </div>
             </main>
 
-            {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+            {toast && <Toast message={toast.message} link={toast.link} type={toast.type} onClose={() => setToast(null)} />}
 
             {/* AI Modals */}
             <AIConfigModal
