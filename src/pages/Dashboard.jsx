@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
 import { parseDiff } from '../utils/diffParser';
@@ -36,6 +36,13 @@ const Dashboard = () => {
     const [activeFeatures, setActiveFeatures] = useState(new Set());
     const [depConfirm, setDepConfirm] = useState(null); // { feature, dependency }
     const [rawDiff, setRawDiff] = useState(''); // raw diff text for AI
+
+    // --- Resizable Sidebar ---
+    const SIDEBAR_MIN_WIDTH = 200;
+    const SIDEBAR_MAX_WIDTH = 600;
+    const SIDEBAR_DEFAULT_WIDTH = 256; // same as w-64
+    const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT_WIDTH);
+    const isResizing = useRef(false);
 
     // Check if AI is already configured on mount
     useEffect(() => {
@@ -205,10 +212,43 @@ const Dashboard = () => {
     }, [rawDiff]);
 
     /**
+     * Scan a hunk around a line and deselect all lines of the opposite type.
+     * This enforces mutual exclusion: you can't have both red and green
+     * selected in the same hunk.
+     *
+     * @param {Set} selectionSet — the mutable Set of selected line IDs
+     * @param {string} lineId    — the line ID we're acting on
+     * @param {string} lineType  — 'addition' or 'deletion'
+     */
+    const enforceHunkExclusion = useCallback((selectionSet, lineId, lineType) => {
+        if (lineType !== 'addition' && lineType !== 'deletion') return;
+        const oppositeType = lineType === 'addition' ? 'deletion' : 'addition';
+
+        for (const file of diffData) {
+            const idx = file.lines.findIndex(l => l.id === lineId);
+            if (idx === -1) continue;
+
+            // Scan backwards from this line to the previous @@ chunk header
+            for (let i = idx - 1; i >= 0; i--) {
+                const l = file.lines[i];
+                if (l.type === 'chunk') break;
+                if (l.type === oppositeType) selectionSet.delete(l.id);
+            }
+            // Scan forwards from this line to the next @@ chunk header
+            for (let i = idx + 1; i < file.lines.length; i++) {
+                const l = file.lines[i];
+                if (l.type === 'chunk') break;
+                if (l.type === oppositeType) selectionSet.delete(l.id);
+            }
+            break; // found the file, stop searching
+        }
+    }, [diffData]);
+
+    /**
      * Apply a single feature's lineIds to selectedLines.
-     * Adds the feature's addition IDs, removes its deletion IDs (so the new
-     * code replaces the old code — matching the app's "selected = keep" logic
-     * for deletions and "selected = add" for additions).
+     * Adds the feature's addition IDs, removes its deletion IDs, and
+     * enforces hunk-level mutual exclusion so red + green can never
+     * both be selected in the same hunk.
      */
     const applyFeature = useCallback((featureName) => {
         if (!aiFeatures?.features?.[featureName]) return;
@@ -216,21 +256,22 @@ const Dashboard = () => {
         setSelectedLines(prev => {
             const next = new Set(prev);
             ids.forEach(id => {
-                // Additions → select (add the new code)
-                // Deletions → deselect (remove the old code)
                 if (id.includes(':old:')) {
-                    next.delete(id);
+                    next.delete(id); // Deselect = remove old code
                 } else {
-                    next.add(id);
+                    next.add(id);    // Select   = add new code
+                    // Deselect any red lines in the same hunk
+                    enforceHunkExclusion(next, id, 'addition');
                 }
             });
             return next;
         });
-    }, [aiFeatures]);
+    }, [aiFeatures, enforceHunkExclusion]);
 
     /**
      * Remove a single feature's lineIds from selectedLines.
-     * Reverses the applyFeature logic: re-selects deletions, deselects additions.
+     * Re-selects deletions, deselects additions, and enforces
+     * hunk-level mutual exclusion.
      */
     const removeFeature = useCallback((featureName) => {
         if (!aiFeatures?.features?.[featureName]) return;
@@ -239,14 +280,16 @@ const Dashboard = () => {
             const next = new Set(prev);
             ids.forEach(id => {
                 if (id.includes(':old:')) {
-                    next.add(id); // Re-select = keep old code
+                    next.add(id);    // Re-select = keep old code
+                    // Deselect any green lines in the same hunk
+                    enforceHunkExclusion(next, id, 'deletion');
                 } else {
                     next.delete(id); // Deselect = don't add new code
                 }
             });
             return next;
         });
-    }, [aiFeatures]);
+    }, [aiFeatures, enforceHunkExclusion]);
 
     /**
      * Handle toggling a feature ON/OFF.
@@ -322,6 +365,31 @@ const Dashboard = () => {
         Object.keys(aiFeatures.features).forEach(n => removeFeature(n));
         setActiveFeatures(new Set());
     }, [aiFeatures, removeFeature]);
+
+    // --- Sidebar Resize Handlers ---
+    const handleSidebarMouseDown = useCallback((e) => {
+        e.preventDefault();
+        isResizing.current = true;
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+
+        const onMouseMove = (moveEvent) => {
+            if (!isResizing.current) return;
+            const newWidth = Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, moveEvent.clientX));
+            setSidebarWidth(newWidth);
+        };
+
+        const onMouseUp = () => {
+            isResizing.current = false;
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+        };
+
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+    }, []);
 
     const handleMerge = async () => {
         // Warning: if nothing is selected, we might be creating an empty file or deleting everything?
@@ -491,10 +559,10 @@ const Dashboard = () => {
                     ) : (
                         <button
                             onClick={() => setShowAIConfig(true)}
-                            className="p-2 hover:bg-white/5 rounded-full text-zinc-400 hover:text-white transition-colors"
-                            title="Enable AI Assistant"
+                            className="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 border border-zinc-700"
                         >
-                            <Sparkles size={18} />
+                            <Sparkles size={16} className="text-primary" />
+                            Analyze with AI
                         </button>
                     )}
 
@@ -514,8 +582,16 @@ const Dashboard = () => {
 
             {/* Main Content */}
             <main className="flex-1 flex overflow-hidden">
-                {/* Sidebar (Simplistic for now) */}
-                <aside className="w-64 border-r border-border bg-surface/30 hidden md:block overflow-y-auto">
+                {/* Sidebar — resizable via drag handle */}
+                <aside
+                    className="border-r border-border bg-surface/30 hidden md:flex flex-col overflow-y-auto relative flex-shrink-0"
+                    style={{ width: sidebarWidth }}
+                >
+                    {/* Drag handle */}
+                    <div
+                        onMouseDown={handleSidebarMouseDown}
+                        className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-primary/50 transition-colors z-10"
+                    />
                     <div className="p-4">
                         <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-3">Changes</h3>
                         <div className="space-y-1">
