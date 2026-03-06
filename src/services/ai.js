@@ -43,16 +43,26 @@ export const SUPPORTED_PROVIDERS = [
 
 export const AI_SYSTEM_PROMPT = `You are a code-review assistant. You will receive a unified diff from a GitHub Pull Request.
 
-Your task:
-1. Read every changed line in the diff.
-2. Group the changes into logical "features" — a feature is a self-contained unit of functionality (e.g., "Add user authentication", "Fix pagination bug", "Update API error handling").
-3. For each feature, list the EXACT line IDs that belong to it. Line IDs follow the format:
-   - For deletions (lines removed from the original): fileName:old:lineNumber
-   - For additions (lines added in the PR):          fileName:new:lineNumber
-   Context lines (unchanged) should NOT be included.
-4. Identify dependencies between features. A dependency means Feature A cannot work correctly without Feature B also being included.
+Each changed line in the diff is pre-annotated with its unique ID in the format:
+  [ID: fileName:old:lineNumber] for deletions (lines starting with -)
+  [ID: fileName:new:lineNumber] for additions  (lines starting with +)
+Context lines (unchanged, starting with a space) have NO [ID:] tag. Ignore them.
 
-Respond with ONLY valid JSON in this exact schema (no markdown, no explanation):
+Your task:
+1. Read every annotated line (lines that have an [ID:] tag).
+2. Group them into logical "features" — a feature is a self-contained unit of functionality (e.g., "Add user authentication", "Fix pagination bug").
+3. For each feature, copy the EXACT IDs from the [ID:] tags into the lineIds array.
+4. Identify dependencies between features.
+
+CRITICAL RULES:
+- You MUST include EVERY annotated line ID in exactly one feature. No line may be skipped.
+- Before responding, COUNT the total lineIds across all features and verify it equals the total number of annotated lines. If not, find and add the missing ones.
+- Feature names should be short, human-readable labels.
+- If a feature has no dependencies, map it to an empty array.
+- Do NOT include context lines (lines without [ID:] tags).
+- Do NOT wrap the JSON in markdown code fences.
+
+Respond with ONLY valid JSON in this exact schema:
 
 {
   "features": {
@@ -64,14 +74,7 @@ Respond with ONLY valid JSON in this exact schema (no markdown, no explanation):
   "dependencies": {
     "<feature_name>": ["<dependency_feature_name>"]
   }
-}
-
-Rules:
-- Feature names should be short, human-readable labels (e.g., "Add login endpoint").
-- Every addition and deletion line ID from the diff MUST appear in exactly one feature.
-- If a feature has no dependencies, map it to an empty array.
-- Do NOT include context lines (unchanged lines) in any feature.
-- Do NOT wrap the JSON in markdown code fences.`;
+}`;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -110,6 +113,125 @@ export const clearAIConfig = () => {
 };
 
 // ---------------------------------------------------------------------------
+// Annotated diff builder — pre-computes line IDs for the AI
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse a raw unified diff and annotate each addition/deletion line with its
+ * exact ID, so the AI doesn't have to compute IDs itself.
+ *
+ * @param {string} rawDiff — the raw unified diff string
+ * @returns {{ annotatedDiff: string, allLineIds: string[] }}
+ */
+const buildAnnotatedDiff = (rawDiff) => {
+    const allLineIds = [];
+    const outputLines = [];
+
+    const files = rawDiff.split('diff --git a/');
+    for (const fileChunk of files) {
+        if (!fileChunk.trim()) continue;
+
+        const lines = fileChunk.split('\n');
+        const headerLine = lines[0];
+        const fileName = headerLine.split(' b/')[0];
+
+        // Re-add the diff header
+        outputLines.push(`diff --git a/${headerLine}`);
+
+        const chunkStartIndex = lines.findIndex(line => line.startsWith('@@'));
+        if (chunkStartIndex === -1) {
+            // No hunks — just push the header lines
+            for (let i = 1; i < lines.length; i++) outputLines.push(lines[i]);
+            continue;
+        }
+
+        // Push lines between diff header and first chunk (e.g., ---/+++ lines)
+        for (let i = 1; i < chunkStartIndex; i++) outputLines.push(lines[i]);
+
+        let oldLineNum = 0;
+        let newLineNum = 0;
+
+        for (let i = chunkStartIndex; i < lines.length; i++) {
+            const line = lines[i];
+
+            if (line.startsWith('@@')) {
+                const match = line.match(/@@ \-(\d+),?\d* \+(\d+),?\d* @@/);
+                if (match) {
+                    oldLineNum = parseInt(match[1]) - 1;
+                    newLineNum = parseInt(match[2]) - 1;
+                }
+                outputLines.push(line);
+                continue;
+            }
+
+            if (line.startsWith('\\')) {
+                outputLines.push(line);
+                continue;
+            }
+
+            if (line.startsWith('-')) {
+                oldLineNum++;
+                const id = `${fileName}:old:${oldLineNum}`;
+                allLineIds.push(id);
+                outputLines.push(`[ID: ${id}] ${line}`);
+            } else if (line.startsWith('+')) {
+                newLineNum++;
+                const id = `${fileName}:new:${newLineNum}`;
+                allLineIds.push(id);
+                outputLines.push(`[ID: ${id}] ${line}`);
+            } else {
+                // Context line — increment both counters, no annotation
+                if (line !== '') {
+                    oldLineNum++;
+                    newLineNum++;
+                }
+                outputLines.push(line);
+            }
+        }
+    }
+
+    return { annotatedDiff: outputLines.join('\n'), allLineIds };
+};
+
+// ---------------------------------------------------------------------------
+// Post-response validation — catch missed lines
+// ---------------------------------------------------------------------------
+
+/**
+ * Compare the AI's returned lineIds against the full set of addition/deletion
+ * IDs. Any missed lines are grouped into an auto-generated "Uncategorized
+ * Changes" feature.
+ *
+ * @param {object} parsed       — the AI's parsed response { features, dependencies }
+ * @param {string[]} allLineIds — every addition/deletion ID from the diff
+ * @returns {object}            — the validated (and possibly augmented) response
+ */
+const validateCoverage = (parsed, allLineIds) => {
+    // Collect every ID the AI returned
+    const coveredIds = new Set();
+    for (const feature of Object.values(parsed.features)) {
+        for (const id of (feature.lineIds || [])) {
+            coveredIds.add(id);
+        }
+    }
+
+    // Find which IDs are missing
+    const missedIds = allLineIds.filter(id => !coveredIds.has(id));
+
+    if (missedIds.length > 0) {
+        parsed.features["Uncategorized Changes"] = {
+            description: `${missedIds.length} line(s) the AI did not assign to any feature.`,
+            lineIds: missedIds,
+        };
+        if (!parsed.dependencies["Uncategorized Changes"]) {
+            parsed.dependencies["Uncategorized Changes"] = [];
+        }
+    }
+
+    return parsed;
+};
+
+// ---------------------------------------------------------------------------
 // Provider-specific request builders
 // ---------------------------------------------------------------------------
 
@@ -117,11 +239,11 @@ export const clearAIConfig = () => {
  * Build a fetch request for the selected provider.
  * @param {string} providerId
  * @param {string} apiKey
- * @param {string} diffText — the raw unified diff
+ * @param {string} annotatedDiff — the diff with [ID:] annotations
  * @returns {{ url: string, options: RequestInit }}
  */
-const buildRequest = (providerId, apiKey, diffText) => {
-    const userMessage = `Here is the unified diff:\n\n${diffText}`;
+const buildRequest = (providerId, apiKey, annotatedDiff) => {
+    const userMessage = `Here is the annotated unified diff. Each changed line is tagged with its [ID:]. Use these exact IDs in your response.\n\n${annotatedDiff}`;
 
     switch (providerId) {
         case "openai": {
@@ -328,14 +450,16 @@ export const analyzeWithAI = async (diffText, configOverride = null) => {
         throw new Error("AI is not configured. Please set up a provider and API key first.");
     }
 
+    // Pre-annotate the diff with [ID:] tags so the AI copies exact IDs
+    const { annotatedDiff, allLineIds } = buildAnnotatedDiff(diffText);
+
     const { provider, apiKey } = config;
-    const { url, options } = buildRequest(provider, apiKey, diffText);
+    const { url, options } = buildRequest(provider, apiKey, annotatedDiff);
 
     let response;
     try {
         response = await fetch(url, options);
     } catch (networkErr) {
-        // Network-level failures (no internet, DNS fail, CORS block, etc.)
         if (provider === "anthropic") {
             throw new Error(
                 "Could not reach Anthropic's API. Anthropic blocks direct browser requests (CORS). Use Gemini or OpenAI instead."
@@ -371,6 +495,9 @@ export const analyzeWithAI = async (diffText, configOverride = null) => {
     if (!parsed.dependencies || typeof parsed.dependencies !== "object") {
         parsed.dependencies = {};
     }
+
+    // Validate coverage — auto-create "Uncategorized Changes" for missed lines
+    parsed = validateCoverage(parsed, allLineIds);
 
     return parsed;
 };
