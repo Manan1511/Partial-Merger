@@ -1,11 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
 import { parseDiff } from '../utils/diffParser';
 import { getPRDetails, mergeLines, getFileContent } from '../services/github';
+import { analyzeWithAI, getAIConfig } from '../services/ai';
 import DiffViewer from '../components/DiffViewer';
+import AIFeaturePanel from '../components/AIFeaturePanel';
 import Toast from '../components/ui/Toast';
-import { ArrowLeft, GitMerge, Loader2, Github, Check, Minus } from 'lucide-react';
+import AIConfigModal from '../components/ui/AIConfigModal';
+import DependencyConfirmModal from '../components/ui/DependencyConfirmModal';
+import { ArrowLeft, GitMerge, Loader2, Github, Check, Minus, Sparkles, Settings } from 'lucide-react';
 
 const Dashboard = () => {
     const location = useLocation();
@@ -19,9 +23,24 @@ const Dashboard = () => {
 
     const { url, token } = location.state || {};
 
-    // --- NEW: Global Selection Mode State ---
+    // --- Global Selection Mode State ---
     const [fileModes, setFileModes] = useState({}); // { fileName: 'block' | 'single' }
     const [globalMode, setGlobalMode] = useState('block'); // 'block' | 'single'
+
+    // --- AI Feature State ---
+    const [showAIConfig, setShowAIConfig] = useState(false);
+    const [aiEnabled, setAiEnabled] = useState(false);
+    const [aiFeatures, setAiFeatures] = useState(null);
+    const [aiLoading, setAiLoading] = useState(false);
+    const [aiError, setAiError] = useState(null);
+    const [activeFeatures, setActiveFeatures] = useState(new Set());
+    const [depConfirm, setDepConfirm] = useState(null); // { feature, dependency }
+    const [rawDiff, setRawDiff] = useState(''); // raw diff text for AI
+
+    // Check if AI is already configured on mount
+    useEffect(() => {
+        setAiEnabled(!!getAIConfig());
+    }, []);
 
     // Initialize or Reset modes when diffData changes
     useEffect(() => {
@@ -50,6 +69,7 @@ const Dashboard = () => {
 
                 const { diff, pr } = await getPRDetails(token, { owner, repo, pull_number });
                 setPrDetails(pr);
+                setRawDiff(diff); // Save raw diff for AI
                 const parsed = parseDiff(diff);
                 setDiffData(parsed);
 
@@ -158,6 +178,150 @@ const Dashboard = () => {
         else newSet.add(id);
         setSelectedLines(newSet);
     };
+
+    // --- AI Handlers ---
+
+    /** Called when user saves config in AIConfigModal */
+    const handleAIConfigSave = useCallback((provider, apiKey) => {
+        setAiEnabled(!!(provider && apiKey));
+    }, []);
+
+    /** Trigger AI analysis of the diff */
+    const handleAnalyzeAI = useCallback(async () => {
+        if (!rawDiff) return;
+        setAiLoading(true);
+        setAiError(null);
+        setAiFeatures(null);
+        setActiveFeatures(new Set());
+
+        try {
+            const result = await analyzeWithAI(rawDiff);
+            setAiFeatures(result);
+        } catch (err) {
+            setAiError(err.message || 'AI analysis failed.');
+        } finally {
+            setAiLoading(false);
+        }
+    }, [rawDiff]);
+
+    /**
+     * Apply a single feature's lineIds to selectedLines.
+     * Adds the feature's addition IDs, removes its deletion IDs (so the new
+     * code replaces the old code — matching the app's "selected = keep" logic
+     * for deletions and "selected = add" for additions).
+     */
+    const applyFeature = useCallback((featureName) => {
+        if (!aiFeatures?.features?.[featureName]) return;
+        const ids = aiFeatures.features[featureName].lineIds || [];
+        setSelectedLines(prev => {
+            const next = new Set(prev);
+            ids.forEach(id => {
+                // Additions → select (add the new code)
+                // Deletions → deselect (remove the old code)
+                if (id.includes(':old:')) {
+                    next.delete(id);
+                } else {
+                    next.add(id);
+                }
+            });
+            return next;
+        });
+    }, [aiFeatures]);
+
+    /**
+     * Remove a single feature's lineIds from selectedLines.
+     * Reverses the applyFeature logic: re-selects deletions, deselects additions.
+     */
+    const removeFeature = useCallback((featureName) => {
+        if (!aiFeatures?.features?.[featureName]) return;
+        const ids = aiFeatures.features[featureName].lineIds || [];
+        setSelectedLines(prev => {
+            const next = new Set(prev);
+            ids.forEach(id => {
+                if (id.includes(':old:')) {
+                    next.add(id); // Re-select = keep old code
+                } else {
+                    next.delete(id); // Deselect = don't add new code
+                }
+            });
+            return next;
+        });
+    }, [aiFeatures]);
+
+    /**
+     * Handle toggling a feature ON/OFF.
+     * If turning ON and there are unmet dependencies → show DependencyConfirmModal.
+     */
+    const handleToggleFeature = useCallback((featureName) => {
+        const isCurrentlyActive = activeFeatures.has(featureName);
+
+        if (isCurrentlyActive) {
+            // Turning OFF — straightforward
+            removeFeature(featureName);
+            setActiveFeatures(prev => {
+                const next = new Set(prev);
+                next.delete(featureName);
+                return next;
+            });
+            return;
+        }
+
+        // Turning ON — check dependencies first
+        const deps = aiFeatures?.dependencies?.[featureName] ?? [];
+        const unmetDeps = deps.filter(d => !activeFeatures.has(d));
+
+        if (unmetDeps.length > 0) {
+            // Show confirmation for the FIRST unmet dependency
+            setDepConfirm({ feature: featureName, dependency: unmetDeps[0] });
+            return;
+        }
+
+        // No unmet deps — just enable
+        applyFeature(featureName);
+        setActiveFeatures(prev => new Set(prev).add(featureName));
+    }, [activeFeatures, aiFeatures, applyFeature, removeFeature]);
+
+    /** User confirmed: enable both the feature and its dependency */
+    const handleDepConfirm = useCallback(() => {
+        if (!depConfirm) return;
+        const { feature, dependency } = depConfirm;
+
+        // Enable the dependency first
+        applyFeature(dependency);
+        applyFeature(feature);
+        setActiveFeatures(prev => {
+            const next = new Set(prev);
+            next.add(dependency);
+            next.add(feature);
+            return next;
+        });
+        setDepConfirm(null);
+    }, [depConfirm, applyFeature]);
+
+    /** User denied: enable only the feature, skip the dependency */
+    const handleDepDeny = useCallback(() => {
+        if (!depConfirm) return;
+        const { feature } = depConfirm;
+
+        applyFeature(feature);
+        setActiveFeatures(prev => new Set(prev).add(feature));
+        setDepConfirm(null);
+    }, [depConfirm, applyFeature]);
+
+    /** Select all AI features */
+    const handleSelectAllFeatures = useCallback(() => {
+        if (!aiFeatures?.features) return;
+        const names = Object.keys(aiFeatures.features);
+        names.forEach(n => applyFeature(n));
+        setActiveFeatures(new Set(names));
+    }, [aiFeatures, applyFeature]);
+
+    /** Deselect all AI features */
+    const handleDeselectAllFeatures = useCallback(() => {
+        if (!aiFeatures?.features) return;
+        Object.keys(aiFeatures.features).forEach(n => removeFeature(n));
+        setActiveFeatures(new Set());
+    }, [aiFeatures, removeFeature]);
 
     const handleMerge = async () => {
         // Warning: if nothing is selected, we might be creating an empty file or deleting everything?
@@ -304,10 +468,39 @@ const Dashboard = () => {
                     </div>
                 </div>
 
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-3">
+                    {/* AI Buttons */}
+                    {aiEnabled ? (
+                        <>
+                            <button
+                                onClick={handleAnalyzeAI}
+                                disabled={aiLoading || !rawDiff}
+                                className="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 border border-zinc-700"
+                            >
+                                {aiLoading ? <Loader2 className="animate-spin" size={16} /> : <Sparkles size={16} className="text-primary" />}
+                                {aiLoading ? 'Analyzing…' : 'Analyze with AI'}
+                            </button>
+                            <button
+                                onClick={() => setShowAIConfig(true)}
+                                className="p-2 hover:bg-white/5 rounded-full text-zinc-400 hover:text-white transition-colors"
+                                title="AI Settings"
+                            >
+                                <Settings size={18} />
+                            </button>
+                        </>
+                    ) : (
+                        <button
+                            onClick={() => setShowAIConfig(true)}
+                            className="p-2 hover:bg-white/5 rounded-full text-zinc-400 hover:text-white transition-colors"
+                            title="Enable AI Assistant"
+                        >
+                            <Sparkles size={18} />
+                        </button>
+                    )}
+
                     <button
                         onClick={handleMerge}
-                        disabled={merging} // Removed selectedLines.size === 0 check
+                        disabled={merging}
                         className="bg-primary hover:bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium shadow-glow transition-all disabled:opacity-50 disabled:shadow-none flex items-center gap-2"
                     >
                         {merging ? <Loader2 className="animate-spin" size={16} /> : <GitMerge size={16} />}
@@ -404,6 +597,17 @@ const Dashboard = () => {
                                 })}
                             </div>
                         </div>
+
+                        {/* AI Feature Panel */}
+                        <AIFeaturePanel
+                            aiFeatures={aiFeatures}
+                            aiLoading={aiLoading}
+                            aiError={aiError}
+                            activeFeatures={activeFeatures}
+                            onToggleFeature={handleToggleFeature}
+                            onSelectAll={handleSelectAllFeatures}
+                            onDeselectAll={handleDeselectAllFeatures}
+                        />
                     </div>
                 </aside>
 
@@ -462,6 +666,21 @@ const Dashboard = () => {
             </main>
 
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+
+            {/* AI Modals */}
+            <AIConfigModal
+                isOpen={showAIConfig}
+                onClose={() => setShowAIConfig(false)}
+                onSave={handleAIConfigSave}
+            />
+            <DependencyConfirmModal
+                isOpen={!!depConfirm}
+                feature={depConfirm?.feature ?? ''}
+                dependency={depConfirm?.dependency ?? ''}
+                onConfirm={handleDepConfirm}
+                onDeny={handleDepDeny}
+                onClose={() => setDepConfirm(null)}
+            />
         </div>
     );
 };
