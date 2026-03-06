@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Routes, Route, useNavigate } from 'react-router-dom';
 import Dashboard from './pages/Dashboard';
 import PATModal from './components/ui/PATModal';
 import HelpModal from './components/ui/HelpModal';
-import { Github, ArrowRight, ShieldCheck, Zap, GitCommit, HelpCircle, Check } from 'lucide-react';
+import { Github, ArrowRight, ShieldCheck, Zap, GitCommit, HelpCircle } from 'lucide-react';
 import { checkAuth } from './services/github';
 
 const Landing = () => {
@@ -13,12 +13,6 @@ const Landing = () => {
   const [showHelp, setShowHelp] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [hasSavedToken, setHasSavedToken] = useState(false);
-
-  // Check if a token is already saved in localStorage on mount
-  useEffect(() => {
-    setHasSavedToken(!!localStorage.getItem('partial_merger_pat'));
-  }, []);
 
   const handleAnalyze = async (tokenOverride = null) => {
     if (!url) return;
@@ -42,11 +36,9 @@ const Landing = () => {
       await checkAuth(tokenToUse);
       navigate('/dashboard', { state: { url, token: tokenToUse } });
     } catch (e) {
-      // Only clear the saved token if it was an auth error (401),
-      // NOT on network failures or other transient errors
-      if (!tokenOverride && e?.message?.includes('Invalid')) {
+      // Token invalid or expired
+      if (!tokenOverride) {
         localStorage.removeItem('partial_merger_pat');
-        setHasSavedToken(false);
       }
       setShowModal(true);
     } finally {
@@ -60,7 +52,6 @@ const Landing = () => {
       await checkAuth(token);
       if (saveLocally) {
         localStorage.setItem('partial_merger_pat', token);
-        setHasSavedToken(true);
       }
       setShowModal(false);
       handleAnalyze(token); // Use the new token for this session
@@ -153,11 +144,6 @@ const Landing = () => {
           </div>
         </div>
         {error && <p className="text-red-400 mt-4 text-sm animate-in slide-in-from-top-2">{error}</p>}
-        {!error && hasSavedToken && (
-          <p className="text-emerald-400 mt-4 text-sm flex items-center gap-1.5 animate-in slide-in-from-top-2">
-            <Check size={14} /> GitHub token saved — just paste a PR link and go
-          </p>
-        )}
 
 
 

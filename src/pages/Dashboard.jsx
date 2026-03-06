@@ -9,7 +9,7 @@ import AIFeaturePanel from '../components/AIFeaturePanel';
 import Toast from '../components/ui/Toast';
 import AIConfigModal from '../components/ui/AIConfigModal';
 import DependencyConfirmModal from '../components/ui/DependencyConfirmModal';
-import { ArrowLeft, GitMerge, Loader2, Github, Check, Minus, Sparkles, Settings, LogOut, Trash2 } from 'lucide-react';
+import { ArrowLeft, GitMerge, Loader2, Github, Check, Minus, Sparkles, Settings } from 'lucide-react';
 
 const Dashboard = () => {
     const location = useLocation();
@@ -188,20 +188,6 @@ const Dashboard = () => {
     };
 
     // --- AI Handlers ---
-
-    /** Sign out — navigate home, clear session-only keys (respect localStorage prefs) */
-    const handleLogout = useCallback(() => {
-        // Session-only AI config is in state — just navigating away clears it.
-        // localStorage keys stay if the user chose "Remember me".
-        navigate('/');
-    }, [navigate]);
-
-    /** Forget all — clear everything from localStorage and navigate home */
-    const handleForgetAll = useCallback(() => {
-        localStorage.removeItem('partial_merger_pat');
-        localStorage.removeItem('partial_merger_ai_config');
-        navigate('/');
-    }, [navigate]);
 
     /** Called when user saves config in AIConfigModal */
     const handleAIConfigSave = useCallback((provider, apiKey, saveLocally) => {
@@ -612,23 +598,8 @@ const Dashboard = () => {
                         {merging ? <Loader2 className="animate-spin" size={16} /> : <GitMerge size={16} />}
                         {merging ? "Merging..." : `Merge Selected Lines (${selectedLines.size})`}
                     </button>
-                    {/* Session controls */}
-                    <div className="flex items-center gap-1 border-l border-zinc-700 pl-3 ml-1">
-                        <button
-                            onClick={handleLogout}
-                            className="p-2 hover:bg-white/5 rounded-full text-zinc-400 hover:text-white transition-colors"
-                            title="Sign Out"
-                        >
-                            <LogOut size={18} />
-                        </button>
-                        <button
-                            onClick={handleForgetAll}
-                            className="px-3 py-1.5 hover:bg-red-500/10 rounded-lg text-zinc-400 hover:text-red-400 transition-colors flex items-center gap-1.5 text-sm"
-                            title="Forget All Keys"
-                        >
-                            <Trash2 size={15} />
-                            Forget All Keys
-                        </button>
+                    <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700">
+                        <Github size={16} className="text-zinc-400" />
                     </div>
                 </div>
             </header>
