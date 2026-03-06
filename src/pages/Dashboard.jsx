@@ -36,6 +36,7 @@ const Dashboard = () => {
     const [activeFeatures, setActiveFeatures] = useState(new Set());
     const [depConfirm, setDepConfirm] = useState(null); // { feature, dependency }
     const [rawDiff, setRawDiff] = useState(''); // raw diff text for AI
+    const [sessionAIConfig, setSessionAIConfig] = useState(null); // session-only config (not saved to localStorage)
 
     // --- Resizable Sidebar ---
     const SIDEBAR_MIN_WIDTH = 200;
@@ -189,8 +190,19 @@ const Dashboard = () => {
     // --- AI Handlers ---
 
     /** Called when user saves config in AIConfigModal */
-    const handleAIConfigSave = useCallback((provider, apiKey) => {
-        setAiEnabled(!!(provider && apiKey));
+    const handleAIConfigSave = useCallback((provider, apiKey, saveLocally) => {
+        if (provider && apiKey) {
+            setAiEnabled(true);
+            if (!saveLocally) {
+                // Keep config in memory only for this session
+                setSessionAIConfig({ provider, apiKey });
+            } else {
+                setSessionAIConfig(null); // Already in localStorage
+            }
+        } else {
+            setAiEnabled(false);
+            setSessionAIConfig(null);
+        }
     }, []);
 
     /** Trigger AI analysis of the diff */
@@ -202,14 +214,14 @@ const Dashboard = () => {
         setActiveFeatures(new Set());
 
         try {
-            const result = await analyzeWithAI(rawDiff);
+            const result = await analyzeWithAI(rawDiff, sessionAIConfig);
             setAiFeatures(result);
         } catch (err) {
             setAiError(err.message || 'AI analysis failed.');
         } finally {
             setAiLoading(false);
         }
-    }, [rawDiff]);
+    }, [rawDiff, sessionAIConfig]);
 
     /**
      * Scan a hunk around a line and deselect all lines of the opposite type.
@@ -245,10 +257,21 @@ const Dashboard = () => {
     }, [diffData]);
 
     /**
+     * Look up the actual type ('addition', 'deletion', 'context', 'chunk')
+     * of a line in diffData by its ID. Returns null if not found.
+     */
+    const getLineType = useCallback((lineId) => {
+        for (const file of diffData) {
+            const line = file.lines.find(l => l.id === lineId);
+            if (line) return line.type;
+        }
+        return null;
+    }, [diffData]);
+
+    /**
      * Apply a single feature's lineIds to selectedLines.
-     * Adds the feature's addition IDs, removes its deletion IDs, and
-     * enforces hunk-level mutual exclusion so red + green can never
-     * both be selected in the same hunk.
+     * Only modifies actual addition/deletion lines — context lines from
+     * the AI response are ignored.
      */
     const applyFeature = useCallback((featureName) => {
         if (!aiFeatures?.features?.[featureName]) return;
@@ -256,22 +279,22 @@ const Dashboard = () => {
         setSelectedLines(prev => {
             const next = new Set(prev);
             ids.forEach(id => {
-                if (id.includes(':old:')) {
+                const type = getLineType(id);
+                if (type === 'deletion') {
                     next.delete(id); // Deselect = remove old code
-                } else {
+                } else if (type === 'addition') {
                     next.add(id);    // Select   = add new code
-                    // Deselect any red lines in the same hunk
                     enforceHunkExclusion(next, id, 'addition');
                 }
+                // Skip context lines and unknown IDs
             });
             return next;
         });
-    }, [aiFeatures, enforceHunkExclusion]);
+    }, [aiFeatures, enforceHunkExclusion, getLineType]);
 
     /**
      * Remove a single feature's lineIds from selectedLines.
-     * Re-selects deletions, deselects additions, and enforces
-     * hunk-level mutual exclusion.
+     * Only modifies actual addition/deletion lines.
      */
     const removeFeature = useCallback((featureName) => {
         if (!aiFeatures?.features?.[featureName]) return;
@@ -279,17 +302,18 @@ const Dashboard = () => {
         setSelectedLines(prev => {
             const next = new Set(prev);
             ids.forEach(id => {
-                if (id.includes(':old:')) {
+                const type = getLineType(id);
+                if (type === 'deletion') {
                     next.add(id);    // Re-select = keep old code
-                    // Deselect any green lines in the same hunk
                     enforceHunkExclusion(next, id, 'deletion');
-                } else {
+                } else if (type === 'addition') {
                     next.delete(id); // Deselect = don't add new code
                 }
+                // Skip context lines and unknown IDs
             });
             return next;
         });
-    }, [aiFeatures, enforceHunkExclusion]);
+    }, [aiFeatures, enforceHunkExclusion, getLineType]);
 
     /**
      * Handle toggling a feature ON/OFF.

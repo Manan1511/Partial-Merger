@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { X, ExternalLink, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react';
+import { X, ExternalLink, ChevronDown, ChevronUp, AlertTriangle, Check } from 'lucide-react';
 import clsx from 'clsx';
-import { SUPPORTED_PROVIDERS, AI_STORAGE_KEY, saveAIConfig, getAIConfig, clearAIConfig } from '../../services/ai';
+import { SUPPORTED_PROVIDERS, saveAIConfig, getAIConfig, clearAIConfig } from '../../services/ai';
 
 /**
  * AIConfigModal — lets the user pick an AI provider and enter their API key.
@@ -14,6 +14,7 @@ import { SUPPORTED_PROVIDERS, AI_STORAGE_KEY, saveAIConfig, getAIConfig, clearAI
 const AIConfigModal = ({ isOpen, onClose, onSave }) => {
     const [provider, setProvider] = useState('gemini');
     const [apiKey, setApiKey] = useState('');
+    const [saveLocally, setSaveLocally] = useState(false);
     const [showHelp, setShowHelp] = useState(false);
 
     // Load existing config when modal opens
@@ -23,6 +24,7 @@ const AIConfigModal = ({ isOpen, onClose, onSave }) => {
             if (existing) {
                 setProvider(existing.provider);
                 setApiKey(existing.apiKey);
+                setSaveLocally(true); // Was previously saved locally
             }
         }
     }, [isOpen]);
@@ -31,15 +33,20 @@ const AIConfigModal = ({ isOpen, onClose, onSave }) => {
 
     const handleSave = () => {
         if (!apiKey.trim()) return;
-        saveAIConfig(provider, apiKey.trim());
-        if (onSave) onSave(provider, apiKey.trim());
+        if (saveLocally) {
+            saveAIConfig(provider, apiKey.trim());
+        } else {
+            clearAIConfig(); // Remove any previously saved config
+        }
+        if (onSave) onSave(provider, apiKey.trim(), saveLocally);
         onClose();
     };
 
     const handleClear = () => {
         clearAIConfig();
         setApiKey('');
-        if (onSave) onSave(null, null);
+        setSaveLocally(false);
+        if (onSave) onSave(null, null, false);
         onClose();
     };
 
@@ -120,11 +127,30 @@ const AIConfigModal = ({ isOpen, onClose, onSave }) => {
                         />
                     </div>
 
-                    {/* ── Local-only Warning ────────────────────────────── */}
+                    {/* ── Save Locally Checkbox ────────────────────────── */}
+                    <div
+                        className="flex items-center gap-2 cursor-pointer group"
+                        onClick={() => setSaveLocally(!saveLocally)}
+                    >
+                        <div className={clsx(
+                            "w-4 h-4 rounded border flex items-center justify-center transition-all",
+                            saveLocally ? "bg-primary border-primary" : "border-zinc-600 bg-zinc-800 group-hover:border-zinc-500"
+                        )}>
+                            {saveLocally && <Check size={10} className="text-white" />}
+                        </div>
+                        <label className="text-sm text-zinc-300 select-none cursor-pointer group-hover:text-white transition-colors">
+                            Store key locally (Remember me)
+                        </label>
+                    </div>
+
+                    {/* ── Security Notice ──────────────────────────────── */}
                     <div className="flex items-start gap-2 bg-warning/10 border border-warning/30 rounded-lg p-3 text-xs text-warning">
                         <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
                         <span>
-                            Your API key is stored <strong>only</strong> in your browser's localStorage. It is never sent to our servers.
+                            {saveLocally
+                                ? <>Your API key will be stored in your browser's localStorage. It is <strong>never</strong> sent to our servers. PS : We don't even have servers</>
+                                : <>Your API key will only be kept for this session and cleared when you close the tab.</>
+                            }
                         </span>
                     </div>
 

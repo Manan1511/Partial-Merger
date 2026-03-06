@@ -318,11 +318,12 @@ const parseAPIError = (status, rawBody, providerId) => {
  * Send the diff to the configured AI provider and get back feature groupings.
  *
  * @param {string} diffText — the raw unified diff string
+ * @param {{ provider: string, apiKey: string }} [configOverride] — optional session-only config
  * @returns {Promise<{ features: object, dependencies: object }>}
  * @throws {Error} if not configured, network fails, or response is invalid JSON.
  */
-export const analyzeWithAI = async (diffText) => {
-    const config = getAIConfig();
+export const analyzeWithAI = async (diffText, configOverride = null) => {
+    const config = configOverride || getAIConfig();
     if (!config) {
         throw new Error("AI is not configured. Please set up a provider and API key first.");
     }
