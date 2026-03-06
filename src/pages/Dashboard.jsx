@@ -3,13 +3,13 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
 import { parseDiff } from '../utils/diffParser';
 import { getPRDetails, mergeLines, getFileContent } from '../services/github';
-import { analyzeWithAI, getAIConfig } from '../services/ai';
+import { analyzeWithAI, getAIConfig, clearAIConfig } from '../services/ai';
 import DiffViewer from '../components/DiffViewer';
 import AIFeaturePanel from '../components/AIFeaturePanel';
 import Toast from '../components/ui/Toast';
 import AIConfigModal from '../components/ui/AIConfigModal';
 import DependencyConfirmModal from '../components/ui/DependencyConfirmModal';
-import { ArrowLeft, GitMerge, Loader2, Github, Check, Minus, Sparkles, Settings } from 'lucide-react';
+import { ArrowLeft, GitMerge, Loader2, Github, Check, Minus, Sparkles, Settings, LogOut } from 'lucide-react';
 
 const Dashboard = () => {
     const location = useLocation();
@@ -598,9 +598,19 @@ const Dashboard = () => {
                         {merging ? <Loader2 className="animate-spin" size={16} /> : <GitMerge size={16} />}
                         {merging ? "Merging..." : `Merge Selected Lines (${selectedLines.size})`}
                     </button>
-                    <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700">
-                        <Github size={16} className="text-zinc-400" />
-                    </div>
+                    <button
+                        onClick={() => {
+                            localStorage.removeItem('partial_merger_pat');
+                            clearAIConfig();
+                            setSessionAIConfig(null);
+                            navigate('/');
+                        }}
+                        className="flex items-center gap-2 px-3 py-2 rounded-lg text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition-all text-sm group"
+                        title="Clears all saved keys (GitHub & AI) and returns to the home page"
+                    >
+                        <LogOut size={16} />
+                        <span className="text-xs">Forget keys & exit</span>
+                    </button>
                 </div>
             </header>
 
